@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase.js'
+import { items as demoItems } from './items.js'
 
 function mapItem(item) {
   return {
@@ -10,6 +11,8 @@ function mapItem(item) {
 }
 
 export async function fetchItems() {
+  if (!supabase) return demoItems
+
   const { data, error } = await supabase.from('items').select('*').order('date', { ascending: false })
 
   if (error) throw error
@@ -17,6 +20,8 @@ export async function fetchItems() {
 }
 
 export async function fetchItem(id) {
+  if (!supabase) return demoItems.find((item) => item.id === id) ?? null
+
   const { data, error } = await supabase.from('items').select('*').eq('id', id).maybeSingle()
 
   if (error) throw error
@@ -24,6 +29,10 @@ export async function fetchItem(id) {
 }
 
 export async function createItem(form) {
+  if (!supabase) {
+    throw new Error('Supabase is not configured. Add the VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY environment variables.')
+  }
+
   const item = {
     id: `LF-${Date.now()}`,
     name: form.name,

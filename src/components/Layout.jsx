@@ -1,6 +1,7 @@
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { Bell, Plus } from 'lucide-react'
 import { Button, Img } from './ui.jsx'
+import { isSupabaseConfigured } from '../lib/supabase.js'
 
 const links = [
   { to: '/home', label: 'Home', match: (p) => p === '/home' },
@@ -80,6 +81,11 @@ export default function Layout() {
   return (
     <div className="flex min-h-screen flex-col bg-page">
       <Navbar />
+      {!isSupabaseConfigured && (
+        <div role="status" className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-center text-xs text-amber-900 sm:px-8">
+          Demo mode: connect Supabase in Vercel to enable sign-in and publishing reports.
+        </div>
+      )}
       <main className="flex flex-1 flex-col gap-8 px-4 pt-10 pb-12 sm:px-8 lg:px-28">
         <Outlet />
       </main>

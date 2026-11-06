@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowRight, Check, CircleHelp, Eye, EyeOff, ShieldCheck } from 'lucide-react'
 import { Button, Field, Img, inputClass } from '../components/ui.jsx'
-import { supabase } from '../lib/supabase.js'
+import { isSupabaseConfigured, supabase } from '../lib/supabase.js'
 
 export default function Login() {
   const navigate = useNavigate()
@@ -16,6 +16,10 @@ export default function Login() {
   const submit = async (e) => {
     e.preventDefault()
     setError('')
+    if (!isSupabaseConfigured) {
+      setError('Sign-in is unavailable until the Supabase environment variables are configured in Vercel.')
+      return
+    }
     setSubmitting(true)
     const { error: authError } = await supabase.auth.signInWithPassword({
       email: identifier,
