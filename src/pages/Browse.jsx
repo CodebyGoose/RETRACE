@@ -18,7 +18,7 @@ const TABS = [
   { key: 'lost', label: 'Lost' },
 ]
 
-const PAGES = ['1', '2', '3', '…', '7']
+const PAGE_SIZE = 6
 
 export default function Browse() {
   const [params, setParams] = useSearchParams()
@@ -31,12 +31,25 @@ export default function Browse() {
   const [sort, setSort] = useState('newest')
   const [page, setPage] = useState(1)
   const [items, setItems] = useState([])
+  const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   useEffect(() => {
-    fetchItems().then(setItems).catch((error) => {
-      console.error('Unable to load items:', error)
-      setLoadError('Unable to load items right now.')
-    })
+    let active = true
+    async function loadItems() {
+      try {
+        const fetchedItems = await fetchItems()
+        if (active) setItems(fetchedItems)
+      } catch (error) {
+        if (active) {
+          console.error('Unable to load items:', error)
+          setLoadError('Unable to load items right now.')
+        }
+      } finally {
+        if (active) setIsLoading(false)
+      }
+    }
+    loadItems()
+    return () => { active = false }
   }, [])
   const categories = [...new Set(items.map((item) => item.category))]
   const locations = [...new Set(items.map((item) => item.place))]
@@ -57,9 +70,33 @@ export default function Browse() {
         return days <= maxDays
       })
       .sort((a, b) => (sort === 'newest' ? b.date.localeCompare(a.date) : a.date.localeCompare(b.date)))
+  }, [items, q, cats, location, dateIdx, tab, sort])
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
+  const currentPage = Math.min(page, Math.max(1, totalPages))
+  const startIndex = (currentPage - 1) * PAGE_SIZE
+  const visibleItems = filtered.slice(startIndex, startIndex + PAGE_SIZE)
+  const pageNumbers = []
+  const numberedPages = totalPages <= 7
+    ? Array.from({ length: totalPages }, (_, i) => i + 1)
+    : [...new Set([1, currentPage - 1, currentPage, currentPage + 1, totalPages])]
+      .filter((number) => number >= 1 && number <= totalPages)
+      .sort((a, b) => a - b)
+  numberedPages.forEach((number, index) => {
+    const previous = numberedPages[index - 1]
+    if (number - previous === 2) pageNumbers.push(previous + 1)
+    else if (number - previous > 2) pageNumbers.push(`ellipsis-${number}`)
+    pageNumbers.push(number)
+  })
+
+  useEffect(() => {
+    setPage(1)
   }, [q, cats, location, dateIdx, tab, sort])
 
-  const pristine = !q && !cats.length && !location && dateIdx === 0 && tab === 'all'
+  useEffect(() => {
+    setPage((previous) => Math.min(previous, Math.max(1, totalPages)))
+  }, [totalPages])
+
   const count = (key) => (key === 'all' ? items.length : items.filter((item) => item.status === key).length)
 
   const reset = () => {
@@ -69,6 +106,7 @@ export default function Browse() {
     setTab('all')
     setDraft('')
     setParams({})
+    setPage(1)
   }
 
   const toggleCat = (name) => setCats((c) => (c.includes(name) ? c.filter((x) => x !== name) : [...c, name]))
@@ -77,13 +115,14 @@ export default function Browse() {
     <>
       <PageIntro
         title="Find what you’re looking for."
-        description="Browse lost and found items from across the Northbridge campus."
+        description="Browse lost and found items from across the University of the Assumption campus."
       />
 
       <form
         onSubmit={(e) => {
           e.preventDefault()
           setParams(draft.trim() ? { q: draft.trim() } : {})
+          setPage(1)
         }}
         className="flex h-[52px] items-center gap-3 rounded-lg border border-line bg-white pr-1 pl-[18px]"
       >
@@ -171,7 +210,7 @@ export default function Browse() {
         </aside>
 
         {/* Results */}
-        <section className="flex min-w-0 flex-1 flex-col gap-6">
+        <section aria-busy={isLoading} className="flex min-w-0 flex-1 flex-col gap-6">
           <div role="tablist" className="flex h-[41px] gap-6 border-b border-line">
             {TABS.map((t) => (
               <button
@@ -193,9 +232,9 @@ export default function Browse() {
 
           <div className="flex items-center justify-between text-xs text-muted">
             <p aria-live="polite">
-              {loadError ? loadError : pristine
-                ? `Showing 1–${filtered.length} of ${items.length} items`
-                : `${filtered.length} ${filtered.length === 1 ? 'item' : 'items'} found`}
+              {isLoading ? 'Loading items…' : loadError ? loadError : filtered.length
+                ? `Showing ${startIndex + 1}–${startIndex + visibleItems.length} of ${filtered.length} ${filtered.length === 1 ? 'item' : 'items'}`
+                : 'Showing 0 items'}
             </p>
             <label className="relative flex items-center gap-2">
               Sort by:
@@ -211,9 +250,17 @@ export default function Browse() {
             </label>
           </div>
 
-          {filtered.length ? (
+          {isLoading ? (
+            <Card className="px-6 py-14 text-center text-sm text-muted">
+              Loading items…
+            </Card>
+          ) : loadError ? (
+            <Card role="alert" className="px-6 py-14 text-center text-sm text-ink">
+              {loadError}
+            </Card>
+          ) : filtered.length ? (
             <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-              {filtered.map((item) => (
+              {visibleItems.map((item) => (
                 <ItemCard key={item.id} item={item} to={`/items/${item.id}`} />
               ))}
             </div>
@@ -231,31 +278,33 @@ export default function Browse() {
           )}
 
           <nav aria-label="Pagination" className="flex items-center justify-between pt-1">
-            <Button variant="outline" disabled={page === 1} onClick={() => setPage((p) => p - 1)}>
+            <Button type="button" variant="outline" disabled={isLoading || !!loadError || currentPage === 1} onClick={() => setPage(currentPage - 1)}>
               <ArrowLeft size={17} />
               Previous
             </Button>
             <div className="hidden gap-1.5 sm:flex">
-              {PAGES.map((p, i) => {
-                const n = Number(p)
-                const current = n === page
+              {pageNumbers.map((number) => {
+                if (typeof number === 'string') {
+                  return <span key={number} className="flex size-[34px] items-center justify-center text-xs text-muted">…</span>
+                }
+                const current = number === currentPage
                 return (
                   <button
-                    key={i}
+                    key={number}
                     type="button"
-                    disabled={Number.isNaN(n)}
-                    onClick={() => setPage(n)}
+                    onClick={() => setPage(number)}
+                    aria-label={`Page ${number}`}
                     aria-current={current ? 'page' : undefined}
                     className={`size-[34px] rounded-md text-xs ${
                       current ? 'bg-found font-semibold text-black' : 'bg-page text-muted hover:bg-chip'
                     }`}
                   >
-                    {p}
+                    {number}
                   </button>
                 )
               })}
             </div>
-            <Button variant="outline" disabled={page === 7} onClick={() => setPage((p) => p + 1)}>
+            <Button type="button" variant="outline" disabled={isLoading || !!loadError || currentPage >= totalPages} onClick={() => setPage(currentPage + 1)}>
               Next
               <ArrowRight size={17} />
             </Button>
