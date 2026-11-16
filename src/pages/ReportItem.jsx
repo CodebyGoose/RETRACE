@@ -4,6 +4,7 @@ import { ArrowRight, Check, HandHeart, Lightbulb, LockKeyhole, Search, ShieldChe
 import { Button, Card, Field, PageIntro, Select, inputClass } from '../components/ui.jsx'
 import { CATEGORIES, LOCATIONS } from '../data/items.js'
 import { createItem } from '../data/itemsApi.js'
+import { supabase } from '../lib/supabase.js'
 
 const KEEP_POINTS = [
   'Main Library help desk',
@@ -26,10 +27,10 @@ const emptyForm = () => ({
   category: '',
   place: '',
   date: today(),
+  time: '',
   specific: '',
   description: '',
   keptAt: '',
-  contactName: '',
   consent: false,
 })
 
@@ -53,11 +54,23 @@ export default function ReportItem() {
   const [notice, setNotice] = useState('')
   const [submitError, setSubmitError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [accountDetails, setAccountDetails] = useState({ name: '', email: '', studentId: '' })
   const fileRef = useRef(null)
   const photosRef = useRef(photos)
   photosRef.current = photos
 
   useEffect(() => () => photosRef.current.forEach((p) => URL.revokeObjectURL(p.url)), [])
+
+  useEffect(() => {
+    supabase?.auth.getUser().then(({ data }) => {
+      const metadata = data.user?.user_metadata ?? {}
+      setAccountDetails({
+        name: [metadata.first_name, metadata.last_name].filter(Boolean).join(' '),
+        email: data.user?.email ?? '',
+        studentId: metadata.student_id ?? '',
+      })
+    })
+  }, [])
 
   const found = form.type === 'found'
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }))
@@ -78,7 +91,7 @@ export default function ReportItem() {
         setPhotoError('Each photo must be 5 MB or smaller.')
         continue
       }
-      next.push({ name: file.name, size: file.size, url: URL.createObjectURL(file) })
+      next.push({ file, name: file.name, size: file.size, url: URL.createObjectURL(file) })
     }
     setPhotos(next)
     if (fileRef.current) fileRef.current.value = ''
@@ -102,18 +115,33 @@ export default function ReportItem() {
   const submit = async (e) => {
     e.preventDefault()
     setSubmitError('')
+    setNotice('')
     setSubmitting(true)
     try {
-      await createItem(form)
+      if (!photos.length) {
+        setPhotoError('Add at least one JPG or PNG photo before publishing.')
+        return
+      }
+      const { data } = await supabase.auth.getSession()
+      if (!data.session) {
+        const error = new Error('Please sign in before publishing a report.')
+        error.code = 'AUTH_REQUIRED'
+        throw error
+      }
+      await createItem({ ...form, photos })
       localStorage.removeItem(DRAFT_KEY)
       photos.forEach((p) => URL.revokeObjectURL(p.url))
       setPhotos([])
       setForm(emptyForm())
-      setNotice('Your report is published. Thank you for helping out!')
+      setNotice(found
+        ? 'Your found-item report is pending turnover until an admin confirms the office received it.'
+        : 'Your report is published. Thank you for helping out!')
       window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch (error) {
       console.error('Unable to publish report:', error)
-      setSubmitError('We could not publish your report. Please sign in and try again.')
+      setSubmitError(error.code === 'AUTH_REQUIRED'
+        ? 'Please sign in before publishing a report.'
+        : error.message || 'We could not publish your report. Please try again.')
     } finally {
       setSubmitting(false)
     }
@@ -131,15 +159,19 @@ export default function ReportItem() {
         <div role="status" className="flex items-center justify-between gap-4 rounded-lg border border-line bg-found px-4 py-3 text-[13px] text-forest">
           <span>
             {notice}{' '}
-            {notice.startsWith('Your report') && (
+            {(notice.startsWith('Your report') || notice.startsWith('Your found-item')) && (
               <Link to="/browse" className="font-semibold underline">Browse items</Link>
             )}
-            {submitError && <p role="alert" className="text-sm text-red-700">{submitError}</p>}
           </span>
           <button type="button" aria-label="Dismiss" onClick={() => setNotice('')}>
             <X size={16} />
           </button>
         </div>
+      )}
+      {submitError && (
+        <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {submitError}
+        </p>
       )}
 
       <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
@@ -201,7 +233,7 @@ export default function ReportItem() {
                   value={form.category}
                   onChange={set('category')}
                   placeholder="Select a category"
-                  options={CATEGORIES.map((c) => c.name)}
+                  options={CATEGORIES}
                 />
               </Field>
             </div>
@@ -212,6 +244,9 @@ export default function ReportItem() {
               </Field>
               <Field label={found ? 'Date found *' : 'Date lost *'} htmlFor="date">
                 <input id="date" type="date" required max={today()} value={form.date} onChange={set('date')} className={inputClass} />
+              </Field>
+              <Field label="Approximate time *" htmlFor="time">
+                <input id="time" type="time" required value={form.time} onChange={set('time')} className={inputClass} />
               </Field>
             </div>
 
@@ -239,7 +274,7 @@ export default function ReportItem() {
             <div className="flex flex-col gap-2.5">
               <div className="flex items-center justify-between">
                 <span className="text-[13px] text-[#040405]">Item photos</span>
-                <span className="text-[11px] text-muted">Optional · up to {MAX_PHOTOS} photos</span>
+                <span className="text-[11px] text-muted">Required · up to {MAX_PHOTOS} photos</span>
               </div>
               <div className="flex flex-col gap-3 rounded-lg border border-dashed border-line p-4">
                 {photos.map((p, i) => (
@@ -273,7 +308,7 @@ export default function ReportItem() {
                 />
               </div>
               <p className={`text-[11px] ${photoError ? 'text-red-700' : 'text-muted'}`} role={photoError ? 'alert' : undefined}>
-                {photoError || 'JPG or PNG, up to 5 MB each. Avoid including faces or personal information.'}
+                {photoError || 'Add at least one JPG or PNG, up to 5 MB each. Avoid including faces or personal information.'}
               </p>
             </div>
 
@@ -294,15 +329,30 @@ export default function ReportItem() {
           <Card className="flex flex-col gap-5 p-7">
             <h2 className="text-[17px] font-semibold text-black">Your contact information</h2>
             <div className="grid gap-5 sm:grid-cols-2">
-              <Field label="Your name" htmlFor="contactName">
-                <input id="contactName" value={form.contactName} onChange={set('contactName')} placeholder="Joshua J. Atienza" className={inputClass} />
+              <Field label="Your name" htmlFor="accountName">
+                <div className="relative">
+                  <input id="accountName" readOnly value={accountDetails.name} placeholder="Name saved in your account" className={`${inputClass} pr-10 text-muted`} />
+                  <LockKeyhole size={16} className="pointer-events-none absolute top-1/2 right-3.5 -translate-y-1/2 text-muted" />
+                </div>
               </Field>
               <Field label="University email" htmlFor="email">
                 <div className="relative">
                   <input
                     id="email"
                     readOnly
-                    value="jjatienza.student@ua.edu.ph"
+                    value={accountDetails.email}
+                    className={`${inputClass} pr-10 text-muted`}
+                  />
+                  <LockKeyhole size={16} className="pointer-events-none absolute top-1/2 right-3.5 -translate-y-1/2 text-muted" />
+                </div>
+              </Field>
+              <Field label="Student ID number" htmlFor="studentId">
+                <div className="relative">
+                  <input
+                    id="studentId"
+                    readOnly
+                    value={accountDetails.studentId}
+                    placeholder="Student ID saved in your account"
                     className={`${inputClass} pr-10 text-muted`}
                   />
                   <LockKeyhole size={16} className="pointer-events-none absolute top-1/2 right-3.5 -translate-y-1/2 text-muted" />

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { ArrowRight, Check, CircleHelp, Eye, EyeOff, ShieldCheck } from 'lucide-react'
 import { Button, Field, Img, inputClass } from '../components/ui.jsx'
 import { isSupabaseConfigured, supabase } from '../lib/supabase.js'
+import { isAdmin } from '../lib/auth.js'
 
 export default function Login() {
   const navigate = useNavigate()
@@ -12,6 +13,9 @@ export default function Login() {
   const [remember, setRemember] = useState(true)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [forgotOpen, setForgotOpen] = useState(false)
+  const [forgotNotice, setForgotNotice] = useState('')
+  const [forgotSubmitting, setForgotSubmitting] = useState(false)
 
   const submit = async (e) => {
     e.preventDefault()
@@ -19,6 +23,25 @@ export default function Login() {
     if (!isSupabaseConfigured) {
       setError('Sign-in is unavailable until the Supabase environment variables are configured in Vercel.')
       return
+    }
+
+    const sendPasswordReset = async () => {
+      setError('')
+      setForgotNotice('')
+      if (!identifier.trim() || !identifier.includes('@')) {
+        setError('Enter your university email first.')
+        return
+      }
+      setForgotSubmitting(true)
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(identifier.trim(), {
+        redirectTo: `${window.location.origin}/change-password`,
+      })
+      setForgotSubmitting(false)
+      if (resetError) {
+        setError(resetError.message)
+        return
+      }
+      setForgotNotice('Check your university email for a password reset link.')
     }
     setSubmitting(true)
     const { error: authError } = await supabase.auth.signInWithPassword({
@@ -30,7 +53,10 @@ export default function Login() {
       setError(authError.message)
       return
     }
-    navigate('/home')
+    const { data: userData } = await supabase.auth.getUser()
+    navigate(userData.user?.user_metadata?.must_change_password
+      ? '/change-password'
+      : isAdmin(userData.user) ? '/admin' : '/home')
   }
 
   return (
@@ -95,14 +121,14 @@ export default function Login() {
                   required
                   value={identifier}
                   onChange={(e) => setIdentifier(e.target.value)}
-                  placeholder="jus-resuello.student@ua.edu.ph"
+                  placeholder="JohnDoe.student@ua.edu.ph"
                   className={inputClass}
                 />
               </Field>
               <Field label="Password" htmlFor="password">
                 <div className="relative">
                   <input
-                    id="password"
+                    id="password" 
                     type={show ? 'text' : 'password'}
                     autoComplete="current-password"
                     required
@@ -136,8 +162,30 @@ export default function Login() {
                 </span>
                 Remember me
               </label>
-              <a href="#" className="text-brand hover:underline">Forgot password?</a>
+              <button
+                type="button"
+                onClick={() => {
+                  setForgotOpen((open) => !open)
+                  setError('')
+                  setForgotNotice('')
+                }}
+                className="text-brand hover:underline"
+              >
+                Forgot password?
+              </button>
             </div>
+
+            {forgotOpen && (
+              <div className="flex flex-col gap-3 rounded-lg border border-line bg-page p-4">
+                <p className="text-xs leading-relaxed text-muted">
+                  We’ll email a secure link to the university address above. The link can be used once to set a new password.
+                </p>
+                <Button type="button" variant="outline" onClick={sendPasswordReset} disabled={forgotSubmitting}>
+                  {forgotSubmitting ? 'Sending email…' : 'Email password reset link'}
+                </Button>
+                {forgotNotice && <p role="status" className="text-xs text-forest">{forgotNotice}</p>}
+              </div>
+            )}
 
             <Button type="submit" className="w-full border-forest">
               <ArrowRight size={17} />
@@ -152,7 +200,7 @@ export default function Login() {
         </div>
 
         <p className="text-center text-[11px] text-muted">
-          © 2026 Atienza, Dorado, Resuello, Salazar · Campus care, connected.
+          © 2026 ADRS · Campus care, connected.
         </p>
       </section>
     </div>

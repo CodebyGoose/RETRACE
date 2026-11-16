@@ -34,12 +34,44 @@ in this browser app. Never put a `service_role` or secret key in `.env.local`, s
 Vercel's client-side environment variables. Database access must be protected with Supabase
 Row Level Security (RLS) policies.
 
-Run `supabase/items.sql` in the Supabase SQL Editor to create the `items` table, its RLS
-policies, and three demo records. For Vercel, add both `VITE_SUPABASE_URL` and
+## Admin access
+
+Create the admin account under **Authentication → Users**, then assign its role from the
+Supabase SQL Editor. Replace the email before running this query:
+
+```sql
+update auth.users
+set raw_app_meta_data = coalesce(raw_app_meta_data, '{}'::jsonb) || '{"role":"admin"}'::jsonb
+where email = 'admin@example.com';
+```
+
+Run `supabase/items.sql` in the Supabase SQL Editor, then sign out and back in to RETRACE. This
+creates the custody, claims, evidence, and audit tables used by the admin workflow. Admin users are redirected to
+`/admin`; regular users are redirected to `/home`. The role is read from Supabase
+`app_metadata`, so it cannot be selected or changed from the browser.
+
+Deploy the student account function before using **Create a student account**:
+
+```bash
+npx supabase functions deploy create-student
+npx supabase functions deploy list-users
+npx supabase functions deploy list-admin-data
+```
+
+The function uses the project’s server-side `SUPABASE_SERVICE_ROLE_KEY` automatically. Never
+put that key in Vercel environment variables prefixed with `VITE_` or in browser code. Admins
+can then create students from `/admin` using their university email, student ID, name,
+department, and a temporary password. RETRACE sends the student a one-time Supabase password
+setup email after creation. The student must replace the temporary password before continuing.
+The **Forgot password?** link on the sign-in screen sends the same kind of reset email for
+future password changes. Add the local and deployed `/change-password` URLs under Supabase
+**Authentication → URL Configuration → Redirect URLs**, and configure SMTP before production use.
+
+Run `supabase/items.sql` in the Supabase SQL Editor to create the `items` table and its RLS
+policies. For Vercel, add both `VITE_SUPABASE_URL` and
 `VITE_SUPABASE_PUBLISHABLE_KEY` under **Settings → Environment Variables** for the
 Production environment, then redeploy. If those variables are not present, the deployed
-app stays usable in demo mode with local sample items, while sign-in and publishing reports
-remain disabled until Supabase is connected.
+app requires Supabase for item browsing, sign-in, and publishing reports.
 
 ## Deploy to Vercel
 
@@ -64,9 +96,7 @@ Or from the terminal: `npm i -g vercel && vercel --prod`.
 
 ## Notes
 
-- Supabase-backed item queries and authentication are wired into the main pages. If the
-  environment variables are unavailable, item reads use the sample data in `src/data/items.js`
-  so a deployment does not render a blank page. Login and publishing a report require the live
-  Supabase configuration. Claims and saving settings are still planned features.
+- Supabase-backed item queries, authentication, roles, student invitations, and profile metadata
+   are wired into the main pages. Claims and saving settings are still planned features.
 - Theme colours and fonts (Inter, Rubik Glitch for the wordmark) are tokens in `src/index.css`.
 - Icons come from `lucide-react`, matching the icon names used in the design.

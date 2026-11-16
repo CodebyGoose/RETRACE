@@ -4,12 +4,6 @@ import { ClipboardList, HandHeart, HeartHandshake, Info, Search } from 'lucide-r
 import { Card, ItemCard, PageIntro } from '../components/ui.jsx'
 import { fetchItems } from '../data/itemsApi.js'
 
-const metrics = [
-  { icon: Search, value: '38', label: 'items looking for their owners' },
-  { icon: HeartHandshake, value: '124', label: 'happy reunions this semester' },
-  { icon: ClipboardList, value: '2', label: 'active reports from you' },
-]
-
 const popular = ['Electronics', 'Keys & cards', 'Bags']
 
 function greeting() {
@@ -40,10 +34,15 @@ export default function Home() {
   const recent = [
     ...items.slice(0, 4).map((item) => ({ ...item, to: `/items/${item.id}` })),
   ]
+  const metrics = [
+    { icon: Search, value: items.length, label: 'items reported on campus' },
+    { icon: HeartHandshake, value: items.filter((item) => item.status === 'found').length, label: 'found items' },
+    { icon: ClipboardList, value: items.filter((item) => item.status === 'lost').length, label: 'lost items' },
+  ]
 
   return (
     <>
-      <PageIntro title={`${greeting()}, Justine.`} description="Let’s get the things that matter back where they belong.">
+      <PageIntro title={`${greeting()}.`} description="Let’s get the things that matter back where they belong.">
         <p className="text-xs text-muted">{today}</p>
       </PageIntro>
 

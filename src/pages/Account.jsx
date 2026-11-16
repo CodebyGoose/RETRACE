@@ -1,8 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { BadgeCheck, Bookmark, ChevronRight, ClipboardList, LockKeyhole, LogOut, ShieldCheck, UserRound } from 'lucide-react'
 import { Button, Card, Field, Img, PageIntro, Select, StatusPill, Toggle, inputClass } from '../components/ui.jsx'
-import { formatDate, getItem } from '../data/items.js'
+import { formatDate } from '../data/items.js'
+import { fetchMyItems } from '../data/itemsApi.js'
+import { supabase } from '../lib/supabase.js'
 
 const DEPARTMENTS = [
   'BS Computer Engineering',
@@ -14,10 +16,10 @@ const DEPARTMENTS = [
 ]
 
 const sideLinks = [
-  { icon: UserRound, label: 'Profile & settings', active: true },
-  { icon: ClipboardList, label: 'My reports' },
-  { icon: Bookmark, label: 'Saved items' },
-  { icon: ShieldCheck, label: 'Security' },
+  { icon: UserRound, label: 'Profile & settings', key: 'profile' },
+  { icon: ClipboardList, label: 'My reports', key: 'reports' },
+  { icon: Bookmark, label: 'Saved items', key: 'saved' },
+  { icon: ShieldCheck, label: 'Security', key: 'security' },
 ]
 
 const notificationOptions = [
@@ -26,17 +28,43 @@ const notificationOptions = [
   { key: 'digest', title: 'Campus lost & found digest', body: 'Receive a weekly roundup of recently reported items.' },
 ]
 
-const recentReports = [getItem('LF-2048'), getItem('LF-2047')]
+const SAVED_ITEMS_KEY = 'retrace:saved-items'
 
 export default function Account() {
   const navigate = useNavigate()
-  const [profile, setProfile] = useState({
-    first: 'Carl Dominik',
-    last: 'Salazar',
-    department: DEPARTMENTS[0],
-  })
+  const [user, setUser] = useState(null)
+  const [reports, setReports] = useState([])
+  const [loadError, setLoadError] = useState('')
+  const [profile, setProfile] = useState({ first: '', last: '', studentId: '', department: DEPARTMENTS[0] })
   const [prefs, setPrefs] = useState({ claims: true, matches: true, digest: false })
   const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState('')
+  const [section, setSection] = useState('profile')
+  const [savedItems, setSavedItems] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(SAVED_ITEMS_KEY) || '[]')
+    } catch {
+      return []
+    }
+  })
+
+  useEffect(() => {
+    Promise.all([supabase.auth.getUser(), fetchMyItems()]).then(([{ data }, userItems]) => {
+      const currentUser = data.user
+      setUser(currentUser)
+      setReports(userItems)
+      const metadata = currentUser?.user_metadata ?? {}
+      setProfile({
+        first: metadata.first_name ?? metadata.first ?? '',
+        last: metadata.last_name ?? metadata.last ?? '',
+        studentId: metadata.student_id ?? '',
+        department: metadata.department ?? DEPARTMENTS[0],
+      })
+    }).catch((error) => {
+      console.error('Unable to load account:', error)
+      setLoadError('Unable to load your account right now.')
+    })
+  }, [])
 
   const setField = (key) => (e) => {
     setSaved(false)
@@ -45,10 +73,26 @@ export default function Account() {
 
   const initials = ((profile.first[0] ?? '') + (profile.last[0] ?? '')).toUpperCase() || 'U'
 
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault()
-    // TODO: persist profile changes
-    setSaved(true)
+    setSaved(false)
+    setSaveError('')
+    try {
+      const { data, error } = await supabase.auth.updateUser({
+        data: {
+          first_name: profile.first.trim(),
+          last_name: profile.last.trim(),
+          student_id: profile.studentId.trim(),
+          department: profile.department,
+        },
+      })
+      if (error) throw error
+      setUser(data.user)
+      setSaved(true)
+    } catch (error) {
+      console.error('Unable to save profile:', error)
+      setSaveError(error.message || 'Unable to save your profile right now.')
+    }
   }
 
   return (
@@ -63,25 +107,26 @@ export default function Account() {
               {initials}
             </span>
             <div className="flex flex-col items-center gap-[7px] text-center">
-              <p className="text-[17px] font-semibold text-ink">Carl Dominik E. Salazar</p>
-              <p className="text-xs text-muted">Undergraduate student</p>
+                <p className="text-[17px] font-semibold text-ink">{`${profile.first} ${profile.last}`.trim() || 'University member'}</p>
+                <p className="text-xs text-muted">{user?.email ?? 'Signed-in account'}</p>
             </div>
             <p className="flex items-center gap-[5px] text-[11px] text-brand">
               <BadgeCheck size={14} />
               University verified
             </p>
             <hr className="w-full border-line" />
-            <p className="text-[11px] text-muted">Member since September 2026</p>
+            <p className="text-[11px] text-muted">Member since {user?.created_at ? formatDate(user.created_at.slice(0, 10)) : 'today'}</p>
           </Card>
 
           <nav aria-label="Account" className="flex flex-col gap-1.5">
-            {sideLinks.map(({ icon: Icon, label, active }) => (
+            {sideLinks.map(({ icon: Icon, label, key }) => (
               <button
                 key={label}
                 type="button"
-                aria-current={active ? 'page' : undefined}
+                aria-current={section === key ? 'page' : undefined}
+                onClick={() => setSection(key)}
                 className={`flex h-11 items-center gap-3 rounded-lg px-3.5 text-left text-[13px] ${
-                  active ? 'bg-white font-semibold text-brand' : 'bg-page text-muted hover:bg-chip'
+                  section === key ? 'bg-white font-semibold text-brand' : 'bg-page text-muted hover:bg-chip'
                 }`}
               >
                 <Icon size={18} />
@@ -91,7 +136,10 @@ export default function Account() {
             <hr className="my-1.5 border-line" />
             <button
               type="button"
-              onClick={() => navigate('/')}
+              onClick={async () => {
+                await supabase.auth.signOut()
+                navigate('/')
+              }}
               className="flex h-11 items-center gap-3 self-start px-3.5 text-[13px] text-muted hover:text-ink"
             >
               <LogOut size={18} />
@@ -102,7 +150,9 @@ export default function Account() {
 
         {/* Settings */}
         <div className="flex min-w-0 flex-1 flex-col gap-6">
-          <form onSubmit={submit} className="flex flex-col gap-[22px] rounded-xl border border-line bg-white p-7">
+          {section === 'profile' && (
+            <>
+              <form onSubmit={submit} className="flex flex-col gap-[22px] rounded-xl border border-line bg-white p-7">
             <div className="flex flex-col gap-[7px]">
               <h2 className="text-lg font-semibold text-ink">Personal information</h2>
               <p className="text-xs text-muted">Keep your campus profile up to date.</p>
@@ -127,7 +177,7 @@ export default function Account() {
                   <input
                     id="email"
                     readOnly
-                    value="cdesalazar.student@ua.edu.ph"
+                    value={user?.email ?? ''}
                     className={`${inputClass} pr-10`}
                   />
                   <LockKeyhole size={16} className="pointer-events-none absolute top-1/2 right-3.5 -translate-y-1/2 text-muted" />
@@ -143,17 +193,27 @@ export default function Account() {
               </Field>
             </div>
 
+              <Field label="Student ID number" htmlFor="studentId" help="This number is issued and managed by the university.">
+              <input
+                id="studentId"
+                readOnly
+                value={profile.studentId}
+                placeholder="Assigned by the university"
+                className={`${inputClass} bg-page text-muted`}
+              />
+            </Field>
+
             <hr className="border-line" />
 
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-[11px] text-muted" role="status">
-                {saved ? 'Changes saved.' : 'Your contact details are never shown publicly.'}
+                {saveError ? <span className="text-red-700" role="alert">{saveError}</span> : saved ? 'Changes saved.' : 'Your contact details are never shown publicly.'}
               </p>
               <Button type="submit" className="border-forest">Save changes</Button>
             </div>
-          </form>
+              </form>
 
-          <Card className="flex flex-col gap-[22px] p-7">
+              <Card className="flex flex-col gap-[22px] p-7">
             <div className="flex flex-col gap-[7px]">
               <h2 className="text-lg font-semibold text-ink">Notifications</h2>
               <p className="text-xs text-muted">A helpful nudge, only when it matters.</p>
@@ -174,16 +234,18 @@ export default function Account() {
                 </div>
               </div>
             ))}
-          </Card>
+              </Card>
+            </>
+          )}
 
-          <Card className="flex flex-col gap-5 p-7">
+          {section === 'reports' && <Card className="flex flex-col gap-5 p-7">
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-lg font-semibold text-black">Your recent reports</h2>
               <Link to="/browse" className="text-xs font-semibold text-black hover:underline">
                 View all reports →
               </Link>
             </div>
-            {recentReports.map((r) => (
+            {loadError ? <p className="text-sm text-red-700">{loadError}</p> : reports.length ? reports.map((r) => (
               <Link
                 key={r.id}
                 to={`/items/${r.id}`}
@@ -197,11 +259,44 @@ export default function Account() {
                   </p>
                 </div>
                 <StatusPill status={r.status} />
-                <span className="hidden text-[11px] text-muted sm:inline">Active</span>
+                <span className="hidden text-[11px] text-muted sm:inline">
+                  {r.status === 'found'
+                    ? r.custody_status === 'pending_turnover' ? 'Pending turnover' : r.custody_status === 'in_custody' ? 'In custody' : 'Claimed'
+                    : 'Active'}
+                </span>
                 <ChevronRight size={16} className="shrink-0 text-muted" />
               </Link>
-            ))}
-          </Card>
+            )) : <p className="text-sm text-muted">You have not reported any items yet.</p>}
+          </Card>}
+
+          {section === 'saved' && (
+            <Card className="flex flex-col gap-4 p-7">
+              <h2 className="text-lg font-semibold text-ink">Saved items</h2>
+              {savedItems.length ? savedItems.map((item) => (
+                <Link key={item.id} to={`/items/${item.id}`} className="flex items-center gap-4 rounded-lg border-b border-line py-3 last:border-0">
+                  <Img src={item.image} alt="" className="h-[54px] w-[58px] shrink-0 rounded-[7px]" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold text-ink">{item.name}</span>
+                    <span className="block truncate text-xs text-muted">{item.id} · {item.place}</span>
+                  </span>
+                  <ChevronRight size={16} className="shrink-0 text-muted" />
+                </Link>
+              )) : (
+                <>
+                  <p className="text-sm text-muted">Items you save while browsing will appear here.</p>
+                  <Button as={Link} to="/browse" className="self-start">Browse items</Button>
+                </>
+              )}
+            </Card>
+          )}
+
+          {section === 'security' && (
+            <Card className="flex flex-col gap-4 p-7">
+              <h2 className="text-lg font-semibold text-ink">Security</h2>
+              <p className="text-sm text-muted">Password changes are managed by the university admin.</p>
+              <p className="text-xs text-muted">Contact the admin if you need your password reset.</p>
+            </Card>
+          )}
         </div>
       </div>
     </>

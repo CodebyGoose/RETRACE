@@ -3,7 +3,6 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, ArrowRight, Check, ChevronDown, Lightbulb, Search } from 'lucide-react'
 import { Button, Card, ItemCard, PageIntro, Select } from '../components/ui.jsx'
 import { fetchItems } from '../data/itemsApi.js'
-import { REF_DATE } from '../data/items.js'
 
 const DATE_OPTIONS = [
   { label: 'Any time', days: Infinity },
@@ -33,10 +32,29 @@ export default function Browse() {
   const [items, setItems] = useState([])
   const [loadError, setLoadError] = useState('')
   useEffect(() => {
-    fetchItems().then(setItems).catch((error) => {
-      console.error('Unable to load items:', error)
-      setLoadError('Unable to load items right now.')
-    })
+    let active = true
+    const loadItems = async () => {
+      try {
+        const nextItems = await fetchItems()
+        if (active) {
+          setItems(nextItems)
+          setLoadError('')
+        }
+      } catch (error) {
+        console.error('Unable to load items:', error)
+        if (active) setLoadError('Unable to load items right now.')
+      }
+    }
+
+    loadItems()
+    const interval = window.setInterval(loadItems, 15000)
+    window.addEventListener('focus', loadItems)
+
+    return () => {
+      active = false
+      window.clearInterval(interval)
+      window.removeEventListener('focus', loadItems)
+    }
   }, [])
   const categories = [...new Set(items.map((item) => item.category))]
   const locations = [...new Set(items.map((item) => item.place))]
@@ -53,11 +71,11 @@ export default function Browse() {
         return [i.name, i.description, i.place, i.category].join(' ').toLowerCase().includes(needle)
       })
       .filter((i) => {
-        const days = (REF_DATE - new Date(i.date + 'T00:00:00')) / 86400000
+        const days = (new Date() - new Date(i.date + 'T00:00:00')) / 86400000
         return days <= maxDays
       })
       .sort((a, b) => (sort === 'newest' ? b.date.localeCompare(a.date) : a.date.localeCompare(b.date)))
-  }, [q, cats, location, dateIdx, tab, sort])
+  }, [items, q, cats, location, dateIdx, tab, sort])
 
   const pristine = !q && !cats.length && !location && dateIdx === 0 && tab === 'all'
   const count = (key) => (key === 'all' ? items.length : items.filter((item) => item.status === key).length)

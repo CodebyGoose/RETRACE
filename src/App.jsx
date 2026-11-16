@@ -7,6 +7,9 @@ import Browse from './pages/Browse.jsx'
 import ItemDetails from './pages/ItemDetails.jsx'
 import ReportItem from './pages/ReportItem.jsx'
 import Account from './pages/Account.jsx'
+import Admin from './pages/Admin.jsx'
+import ChangePassword from './pages/ChangePassword.jsx'
+import MyClaims from './pages/MyClaims.jsx'
 
 function ScrollToTop() {
   const { pathname } = useLocation()
@@ -28,6 +31,9 @@ export default function App() {
           <Route path="/items/:id" element={<ItemDetails />} />
           <Route path="/report" element={<ReportItem />} />
           <Route path="/account" element={<Account />} />
+          <Route path="/claims" element={<MyClaims />} />
+          <Route path="/admin" element={<Admin />} />
+          <Route path="/change-password" element={<ChangePassword />} />
         </Route>
         <Route path="*" element={<Login />} />
       </Routes>

@@ -1,16 +1,31 @@
+import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { Bell, Plus } from 'lucide-react'
 import { Button, Img } from './ui.jsx'
-import { isSupabaseConfigured } from '../lib/supabase.js'
+import { isAdmin } from '../lib/auth.js'
+import { supabase } from '../lib/supabase.js'
 
 const links = [
   { to: '/home', label: 'Home', match: (p) => p === '/home' },
   { to: '/browse', label: 'Browse items', match: (p) => p.startsWith('/browse') || p.startsWith('/items') },
   { to: '/account', label: 'My reports', match: (p) => p === '/account' },
+  { to: '/claims', label: 'My claims', match: (p) => p === '/claims' },
 ]
 
 export function Navbar() {
   const { pathname } = useLocation()
+  const [admin, setAdmin] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    supabase?.auth.getUser().then(({ data }) => {
+      if (active) setAdmin(isAdmin(data.user))
+    })
+    return () => {
+      active = false
+    }
+  }, [])
+
   return (
     <header className="border-b border-line bg-white">
       <div className="flex flex-wrap items-center justify-between gap-x-6 px-4 sm:px-8 lg:min-h-24 lg:px-16">
@@ -37,6 +52,16 @@ export function Navbar() {
               </NavLink>
             )
           })}
+          {admin && (
+            <NavLink
+              to="/admin"
+              className={`flex h-12 items-center border-b-[3px] text-sm transition-colors lg:h-full ${
+                pathname === '/admin' ? 'border-forest text-forest' : 'border-transparent text-muted hover:text-ink'
+              }`}
+            >
+              Admin
+            </NavLink>
+          )}
         </nav>
 
         <div className="flex items-center gap-3 sm:gap-5">
@@ -81,11 +106,6 @@ export default function Layout() {
   return (
     <div className="flex min-h-screen flex-col bg-page">
       <Navbar />
-      {!isSupabaseConfigured && (
-        <div role="status" className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-center text-xs text-amber-900 sm:px-8">
-          Demo mode: connect Supabase in Vercel to enable sign-in and publishing reports.
-        </div>
-      )}
       <main className="flex flex-1 flex-col gap-8 px-4 pt-10 pb-12 sm:px-8 lg:px-28">
         <Outlet />
       </main>
