@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { Bell, Plus } from 'lucide-react'
 import { Button, Img } from './ui.jsx'
+import { fetchNotifications } from '../data/notificationsApi.js'
 import { isAdmin } from '../lib/auth.js'
 import { supabase } from '../lib/supabase.js'
 
@@ -15,14 +16,28 @@ const links = [
 export function Navbar() {
   const { pathname } = useLocation()
   const [admin, setAdmin] = useState(false)
+  const [notifications, setNotifications] = useState([])
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
 
   useEffect(() => {
+    if (!supabase) return undefined
     let active = true
-    supabase?.auth.getUser().then(({ data }) => {
-      if (active) setAdmin(isAdmin(data.user))
-    })
+    const loadNotifications = async () => {
+      try {
+        const { data } = await supabase.auth.getUser()
+        if (!active) return
+        setAdmin(isAdmin(data.user))
+        setNotifications(await fetchNotifications())
+      } catch (error) {
+        console.error('Unable to load notifications:', error)
+      }
+    }
+
+    loadNotifications()
+    const interval = window.setInterval(loadNotifications, 30000)
     return () => {
       active = false
+      window.clearInterval(interval)
     }
   }, [])
 
@@ -71,9 +86,39 @@ export function Navbar() {
             <span className="sm:hidden">Report</span>
           </Button>
           <span className="hidden h-7 w-px bg-line sm:block" />
-          <button type="button" aria-label="Notifications" className="text-muted hover:text-ink">
-            <Bell size={20} />
-          </button>
+          <div className="relative">
+            <button
+              type="button"
+              aria-label="Notifications"
+              aria-expanded={notificationsOpen}
+              onClick={() => setNotificationsOpen((open) => !open)}
+              className="relative text-muted hover:text-ink"
+            >
+              <Bell size={20} />
+              {notifications.length > 0 && <span className="absolute -top-1 -right-1 size-2 rounded-full bg-brand" />}
+            </button>
+            {notificationsOpen && (
+              <div className="absolute top-9 right-0 z-20 w-[min(360px,calc(100vw-32px))] overflow-hidden rounded-xl border border-line bg-white shadow-lg">
+                <div className="flex items-center justify-between border-b border-line px-4 py-3">
+                  <p className="text-sm font-semibold text-ink">Notifications</p>
+                  {notifications.length > 0 && <span className="text-[11px] text-muted">{notifications.length} updates</span>}
+                </div>
+                <div className="max-h-80 overflow-y-auto">
+                  {notifications.length ? notifications.map((notification) => (
+                    <Link
+                      key={notification.id}
+                      to={notification.href}
+                      onClick={() => setNotificationsOpen(false)}
+                      className="block border-b border-line px-4 py-3 last:border-0 hover:bg-page"
+                    >
+                      <p className="text-xs font-semibold text-ink">{notification.title}</p>
+                      <p className="mt-1 text-[11px] leading-relaxed text-muted">{notification.body}</p>
+                    </Link>
+                  )) : <p className="px-4 py-6 text-center text-xs text-muted">You’re all caught up.</p>}
+                </div>
+              </div>
+            )}
+          </div>
           <Link
             to="/account"
             aria-label="Your account"

@@ -270,6 +270,93 @@ grant execute on function public.admin_confirm_turnover(text) to authenticated;
 grant execute on function public.admin_review_claim(uuid, text, text, text) to authenticated;
 grant execute on function public.admin_release_claim(uuid, text) to authenticated;
 
+create or replace function public.get_notifications()
+returns table (
+  id text,
+  title text,
+  body text,
+  href text,
+  created_at timestamptz
+)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  if (auth.jwt() -> 'app_metadata' ->> 'role') = 'admin' then
+    return query
+      select
+        'turnover-' || i.id,
+        'Found item awaiting turnover',
+        i.name || ' is waiting for office receipt confirmation.',
+        '/admin',
+        i.created_at
+      from public.items i
+      where i.status = 'found' and i.custody_status = 'pending_turnover'
+      union all
+      select
+        'claim-review-' || c.id::text,
+        'Ownership claim needs review',
+        'A student submitted a claim for ' || i.name || '.',
+        '/admin',
+        c.created_at
+      from public.claims c
+      join public.items i on i.id = c.item_id
+      where c.status = 'pending_review'
+      union all
+      select
+        'claim-release-' || c.id::text,
+        'Approved item awaiting release',
+        i.name || ' is approved and waiting for collection.',
+        '/admin',
+        c.reviewed_at
+      from public.claims c
+      join public.items i on i.id = c.item_id
+      where c.status = 'approved' and c.released_at is null
+      order by 5 desc
+      limit 25;
+  else
+    return query
+      select
+        'claim-' || c.id::text,
+        case c.status
+          when 'approved' then 'Claim approved'
+          when 'rejected' then 'Claim not approved'
+          else 'Claim is under review'
+        end,
+        case c.status
+          when 'approved' then 'Your claim for ' || i.name || ' was approved.'
+          when 'rejected' then 'Your claim for ' || i.name || ' was not approved.'
+          else 'Your claim for ' || i.name || ' is being reviewed.'
+        end,
+        '/claims',
+        coalesce(c.reviewed_at, c.created_at)
+      from public.claims c
+      join public.items i on i.id = c.item_id
+      where c.claimant_id = auth.uid()
+      union all
+      select
+        'report-' || i.id,
+        'Report updated',
+        case i.custody_status
+          when 'in_custody' then i.name || ' is now in office custody.'
+          when 'claimed' then i.name || ' has been recorded as claimed.'
+          else i.name || ' is waiting for office turnover.'
+        end,
+        '/items/' || i.id,
+        coalesce(i.turnover_confirmed_at, i.claimed_at, i.created_at)
+      from public.items i
+      where i.reported_by = auth.uid()
+        and i.status = 'found'
+      order by 5 desc
+      limit 25;
+  end if;
+end;
+$$;
+
+grant execute on function public.get_notifications() to authenticated;
+
 grant usage on schema public to anon, authenticated;
 revoke all on public.items from anon, authenticated;
 grant select (
