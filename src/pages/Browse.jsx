@@ -17,7 +17,7 @@ const TABS = [
   { key: 'lost', label: 'Lost' },
 ]
 
-const PAGES = ['1', '2', '3', '…', '7']
+const PAGE_SIZE = 9
 
 export default function Browse() {
   const [params, setParams] = useSearchParams()
@@ -79,6 +79,13 @@ export default function Browse() {
 
   const pristine = !q && !cats.length && !location && dateIdx === 0 && tab === 'all'
   const count = (key) => (key === 'all' ? items.length : items.filter((item) => item.status === key).length)
+  const pageCount = Math.ceil(filtered.length / PAGE_SIZE)
+  const currentPage = Math.min(page, Math.max(pageCount, 1))
+  const visibleItems = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+
+  useEffect(() => {
+    setPage(1)
+  }, [q, cats, location, dateIdx, tab, sort])
 
   const reset = () => {
     setCats([])
@@ -212,7 +219,7 @@ export default function Browse() {
           <div className="flex items-center justify-between text-xs text-muted">
             <p aria-live="polite">
               {loadError ? loadError : pristine
-                ? `Showing 1–${filtered.length} of ${items.length} items`
+                ? `Showing ${filtered.length ? `${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, filtered.length)}` : '0'} of ${items.length} items`
                 : `${filtered.length} ${filtered.length === 1 ? 'item' : 'items'} found`}
             </p>
             <label className="relative flex items-center gap-2">
@@ -231,7 +238,7 @@ export default function Browse() {
 
           {filtered.length ? (
             <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-              {filtered.map((item) => (
+              {visibleItems.map((item) => (
                 <ItemCard key={item.id} item={item} to={`/items/${item.id}`} />
               ))}
             </div>
@@ -248,40 +255,49 @@ export default function Browse() {
             </Card>
           )}
 
-          <nav aria-label="Pagination" className="flex items-center justify-between pt-1">
-            <Button variant="outline" disabled={page === 1} onClick={() => setPage((p) => p - 1)}>
-              <ArrowLeft size={17} />
-              Previous
-            </Button>
-            <div className="hidden gap-1.5 sm:flex">
-              {PAGES.map((p, i) => {
-                const n = Number(p)
-                const current = n === page
-                return (
-                  <button
-                    key={i}
-                    type="button"
-                    disabled={Number.isNaN(n)}
-                    onClick={() => setPage(n)}
-                    aria-current={current ? 'page' : undefined}
-                    className={`size-[34px] rounded-md text-xs ${
-                      current ? 'bg-found font-semibold text-black' : 'bg-page text-muted hover:bg-chip'
-                    }`}
-                  >
-                    {p}
-                  </button>
-                )
-              })}
-            </div>
-            <Button variant="outline" disabled={page === 7} onClick={() => setPage((p) => p + 1)}>
-              Next
-              <ArrowRight size={17} />
-            </Button>
-          </nav>
+          {pageCount > 1 && (
+            <nav aria-label="Pagination" className="flex items-center justify-between pt-1">
+              <Button variant="outline" disabled={currentPage === 1} onClick={() => setPage((p) => Math.max(p - 1, 1))}>
+                <ArrowLeft size={17} />
+                Previous
+              </Button>
+              <div className="hidden gap-1.5 sm:flex">
+                {getPageNumbers(currentPage, pageCount).map((value, index) => {
+                  if (value === '…') {
+                    return <span key={`ellipsis-${index}`} className="flex size-[34px] items-center justify-center text-xs text-muted">…</span>
+                  }
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setPage(value)}
+                      aria-current={value === currentPage ? 'page' : undefined}
+                      className={`size-[34px] rounded-md text-xs ${
+                        value === currentPage ? 'bg-found font-semibold text-black' : 'bg-page text-muted hover:bg-chip'
+                      }`}
+                    >
+                      {value}
+                    </button>
+                  )
+                })}
+              </div>
+              <Button variant="outline" disabled={currentPage === pageCount} onClick={() => setPage((p) => Math.min(p + 1, pageCount))}>
+                Next
+                <ArrowRight size={17} />
+              </Button>
+            </nav>
+          )}
         </section>
       </div>
     </>
   )
+}
+
+function getPageNumbers(currentPage, pageCount) {
+  if (pageCount <= 5) return Array.from({ length: pageCount }, (_, index) => index + 1)
+  if (currentPage <= 3) return [1, 2, 3, '…', pageCount]
+  if (currentPage >= pageCount - 2) return [1, '…', pageCount - 2, pageCount - 1, pageCount]
+  return [1, '…', currentPage, '…', pageCount]
 }
 
 function CheckRow({ label, count, checked, onChange, accent }) {

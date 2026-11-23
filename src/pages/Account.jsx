@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { BadgeCheck, Bookmark, ChevronRight, ClipboardList, LockKeyhole, LogOut, ShieldCheck, UserRound } from 'lucide-react'
 import { Button, Card, Field, Img, PageIntro, Select, StatusPill, Toggle, inputClass } from '../components/ui.jsx'
 import { formatDate } from '../data/items.js'
@@ -32,14 +32,17 @@ const SAVED_ITEMS_KEY = 'retrace:saved-items'
 
 export default function Account() {
   const navigate = useNavigate()
+  const { pathname } = useLocation()
   const [user, setUser] = useState(null)
   const [reports, setReports] = useState([])
   const [loadError, setLoadError] = useState('')
   const [profile, setProfile] = useState({ first: '', last: '', studentId: '', department: DEPARTMENTS[0] })
   const [prefs, setPrefs] = useState({ claims: true, matches: true, digest: false })
+  const [savingPreference, setSavingPreference] = useState('')
+  const [notificationStatus, setNotificationStatus] = useState('')
   const [saved, setSaved] = useState(false)
   const [saveError, setSaveError] = useState('')
-  const [section, setSection] = useState('profile')
+  const [section, setSection] = useState(pathname === '/account/reports' ? 'reports' : 'profile')
   const [savedItems, setSavedItems] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem(SAVED_ITEMS_KEY) || '[]')
@@ -60,6 +63,11 @@ export default function Account() {
         studentId: metadata.student_id ?? '',
         department: metadata.department ?? DEPARTMENTS[0],
       })
+      setPrefs({
+        claims: metadata.notification_preferences?.claims ?? true,
+        matches: metadata.notification_preferences?.matches ?? true,
+        digest: metadata.notification_preferences?.digest ?? false,
+      })
     }).catch((error) => {
       console.error('Unable to load account:', error)
       setLoadError('Unable to load your account right now.')
@@ -72,6 +80,28 @@ export default function Account() {
   }
 
   const initials = ((profile.first[0] ?? '') + (profile.last[0] ?? '')).toUpperCase() || 'U'
+
+  const updatePreference = async (key) => {
+    const previous = prefs
+    const next = { ...prefs, [key]: !prefs[key] }
+    setPrefs(next)
+    setSavingPreference(key)
+    setNotificationStatus('')
+    try {
+      const { data, error } = await supabase.auth.updateUser({
+        data: { notification_preferences: next },
+      })
+      if (error) throw error
+      setUser(data.user)
+      setNotificationStatus('Notification preferences saved.')
+    } catch (error) {
+      console.error('Unable to save notification preference:', error)
+      setPrefs(previous)
+      setNotificationStatus(error.message || 'Unable to save notification preferences right now.')
+    } finally {
+      setSavingPreference('')
+    }
+  }
 
   const submit = async (e) => {
     e.preventDefault()
@@ -97,7 +127,10 @@ export default function Account() {
 
   return (
     <>
-      <PageIntro title="Your account" description="Manage your details, notifications and the items you’ve reported." />
+      <PageIntro
+        title={section === 'reports' ? 'My reports' : 'Your account'}
+        description={section === 'reports' ? 'Review the items you’ve reported.' : 'Manage your details, notifications and the items you’ve reported.'}
+      />
 
       <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
         {/* Sidebar */}
@@ -229,11 +262,15 @@ export default function Account() {
                   <Toggle
                     label={n.title}
                     checked={prefs[n.key]}
-                    onChange={(v) => setPrefs((p) => ({ ...p, [n.key]: v }))}
+                    disabled={Boolean(savingPreference)}
+                    onChange={() => updatePreference(n.key)}
                   />
                 </div>
               </div>
             ))}
+            <p className={`text-[11px] ${notificationStatus.startsWith('Unable') ? 'text-red-700' : 'text-muted'}`} role="status">
+              {notificationStatus}
+            </p>
               </Card>
             </>
           )}

@@ -4,8 +4,6 @@ import { ClipboardList, HandHeart, HeartHandshake, Info, Search } from 'lucide-r
 import { Card, ItemCard, PageIntro } from '../components/ui.jsx'
 import { fetchItems } from '../data/itemsApi.js'
 
-const popular = ['Electronics', 'Keys & cards', 'Bags']
-
 function greeting() {
   const h = new Date().getHours()
   return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'
@@ -74,14 +72,6 @@ export default function Home() {
               Search items
             </button>
           </form>
-          <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1">
-            <span className="text-[11px] text-slate">POPULAR</span>
-            {popular.map((p) => (
-              <button key={p} type="button" onClick={() => search(p)} className="text-xs text-brand hover:underline">
-                {p}
-              </button>
-            ))}
-          </div>
         </div>
 
         <div className="hidden w-px shrink-0 bg-hero-line lg:block" />

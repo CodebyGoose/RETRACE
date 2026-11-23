@@ -186,6 +186,7 @@ Deploy the functions:
 npx supabase functions deploy create-student
 npx supabase functions deploy list-users
 npx supabase functions deploy list-admin-data
+npx supabase functions deploy delete-user
 ```
 
 The functions use Supabase server-side credentials automatically. Those credentials must never

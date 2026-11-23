@@ -9,7 +9,7 @@ import { supabase } from '../lib/supabase.js'
 const links = [
   { to: '/home', label: 'Home', match: (p) => p === '/home' },
   { to: '/browse', label: 'Browse items', match: (p) => p.startsWith('/browse') || p.startsWith('/items') },
-  { to: '/account', label: 'My reports', match: (p) => p === '/account' },
+  { to: '/account/reports', label: 'My reports', match: (p) => p === '/account/reports' },
   { to: '/claims', label: 'My claims', match: (p) => p === '/claims' },
 ]
 
@@ -42,7 +42,7 @@ export function Navbar() {
   }, [])
 
   return (
-    <header className="border-b border-line bg-white">
+    <header className="sticky top-0 z-30 border-b border-line bg-white">
       <div className="flex flex-wrap items-center justify-between gap-x-6 px-4 sm:px-8 lg:min-h-24 lg:px-16">
         <Link to="/home" className="flex items-center gap-3 py-3" aria-label="RETRACE home">
           <Img src="/images/seal.png" alt="University of the Assumption seal" className="size-[66px] rounded-full" />

@@ -31,6 +31,7 @@ export default function App() {
           <Route path="/items/:id" element={<ItemDetails />} />
           <Route path="/report" element={<ReportItem />} />
           <Route path="/account" element={<Account />} />
+          <Route path="/account/reports" element={<Account />} />
           <Route path="/claims" element={<MyClaims />} />
           <Route path="/admin" element={<Admin />} />
           <Route path="/change-password" element={<ChangePassword />} />

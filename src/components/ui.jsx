@@ -111,15 +111,16 @@ export function Select({ id, value, onChange, options, placeholder, className = 
   )
 }
 
-export function Toggle({ checked, onChange, label }) {
+export function Toggle({ checked, onChange, label, disabled = false }) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
       aria-label={label}
+      disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`flex h-[21px] w-9 shrink-0 items-center rounded-full p-[3px] transition-colors ${
+      className={`flex h-[21px] w-9 shrink-0 items-center rounded-full p-[3px] transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
         checked ? 'justify-end bg-brand' : 'justify-start bg-toggle-off'
       }`}
     >

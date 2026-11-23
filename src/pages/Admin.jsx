@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { Button, Card, Field, PageIntro, Select, StatusPill, inputClass } from '../components/ui.jsx'
 import { confirmTurnover, fetchAdminData, releaseClaim, reviewClaim } from '../data/claimsApi.js'
+import { deleteUser } from '../data/adminApi.js'
 import { deleteItem } from '../data/itemsApi.js'
 import { isAdmin } from '../lib/auth.js'
 import { supabase } from '../lib/supabase.js'
@@ -40,6 +41,7 @@ export default function Admin() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [creating, setCreating] = useState(false)
+  const [deletingUserId, setDeletingUserId] = useState('')
   const [userSearch, setUserSearch] = useState('')
   const [claimNotes, setClaimNotes] = useState({})
   const [claimPoints, setClaimPoints] = useState({})
@@ -180,7 +182,33 @@ export default function Admin() {
       await loadDashboard(true)
     } catch (createError) {
       console.error('Unable to create student account:', createError)
-      setError(createError.message || 'Unable to create the student account.')
+      let message = createError.message || 'Unable to create the student account.'
+      const response = createError.context
+      if (response && typeof response.clone === 'function') {
+        try {
+          const body = await response.clone().json()
+          if (body?.error) message = body.error
+        } catch {
+          // Keep the SDK error when the function did not return JSON.
+        }
+
+        const removeUser = async (user) => {
+          if (!window.confirm(`Delete the account for ${user.email}? This cannot be undone.`)) return
+          setDeletingUserId(user.id)
+          setError('')
+          try {
+            await deleteUser(user.id)
+            setUsers((current) => current.filter((entry) => entry.id !== user.id))
+            setNotice(`Account for ${user.email} was deleted.`)
+          } catch (deleteError) {
+            console.error('Unable to delete user account:', deleteError)
+            setError(deleteError.message || 'Unable to delete the user account.')
+          } finally {
+            setDeletingUserId('')
+          }
+        }
+      }
+      setError(message)
     } finally {
       setCreating(false)
     }
@@ -188,17 +216,40 @@ export default function Admin() {
 
   return (
     <>
-      <PageIntro title="Operations overview" description="A live view of RETRACE activity, participation, and reports across campus.">
-        <Button variant="outline" onClick={() => loadDashboard(true)} disabled={loading || refreshing}>
-          <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
-          {refreshing ? 'Refreshing…' : 'Refresh data'}
-        </Button>
-      </PageIntro>
+      <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
+        <aside className="flex w-full shrink-0 flex-col gap-5 lg:sticky lg:top-32 lg:w-56">
+          <Card className="flex flex-col gap-2 p-5">
+            <p className="text-[11px] font-semibold tracking-wide text-brand uppercase">Admin console</p>
+            <p className="text-sm font-semibold text-ink">Operations</p>
+            <p className="text-xs leading-relaxed text-muted">Manage campus reports, claims, and student accounts.</p>
+          </Card>
+          <nav aria-label="Admin sections" className="flex gap-2 overflow-x-auto lg:flex-col lg:gap-1.5">
+            {[
+              ['Overview', 'overview'],
+              ['Operations', 'operations'],
+              ['Community', 'community'],
+              ['Create account', 'create-account'],
+              ['Recent reports', 'reports'],
+            ].map(([label, id]) => (
+              <a key={id} href={`#${id}`} className="shrink-0 rounded-lg bg-page px-3.5 py-2.5 text-xs text-muted hover:bg-chip hover:text-ink">
+                {label}
+              </a>
+            ))}
+          </nav>
+        </aside>
 
-      {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
-      {notice && <p role="status" className="rounded-lg border border-line bg-found px-4 py-3 text-sm text-forest">{notice}</p>}
+        <div className="flex min-w-0 flex-1 flex-col gap-8">
+          <PageIntro title="Operations overview" description="A live view of RETRACE activity, participation, and reports across campus.">
+            <Button variant="outline" onClick={() => loadDashboard(true)} disabled={loading || refreshing}>
+              <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
+              {refreshing ? 'Refreshing…' : 'Refresh data'}
+            </Button>
+          </PageIntro>
 
-      <section aria-label="Key metrics" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
+          {notice && <p role="status" className="rounded-lg border border-line bg-found px-4 py-3 text-sm text-forest">{notice}</p>}
+
+      <section id="overview" aria-label="Key metrics" className="grid scroll-mt-32 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {metrics.map(({ label, value, detail, icon: Icon, tone }) => (
           <Card key={label} className="flex items-start justify-between gap-4 p-5">
             <div className="flex flex-col gap-2">
@@ -258,8 +309,8 @@ export default function Admin() {
         <InsightList title="Popular categories" subtitle="The types of items most often reported." rows={topCategories} />
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-2">
-        <Card className="flex flex-col gap-5 p-6">
+      <section id="operations" className="grid scroll-mt-32 gap-5 xl:grid-cols-2">
+        <Card id="community" className="flex scroll-mt-32 flex-col gap-5 p-6">
           <div>
             <h2 className="text-base font-semibold text-ink">Turnover queue</h2>
             <p className="mt-1 text-xs text-muted">Confirm when a found item has reached the designated office.</p>
@@ -339,7 +390,7 @@ export default function Admin() {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[620px] text-left text-xs">
             <thead className="border-b border-line text-[11px] font-medium tracking-wide text-muted uppercase">
-              <tr><th className="pb-3 font-medium">User</th><th className="pb-3 font-medium">Department</th><th className="pb-3 font-medium">Reports</th><th className="pb-3 font-medium">Joined</th><th className="pb-3 text-right font-medium">Status</th></tr>
+              <tr><th className="pb-3 font-medium">User</th><th className="pb-3 font-medium">Department</th><th className="pb-3 font-medium">Reports</th><th className="pb-3 font-medium">Joined</th><th className="pb-3 text-right font-medium">Actions</th></tr>
             </thead>
             <tbody className="divide-y divide-line">
               {filteredUsers.slice(0, 8).map((user) => (
@@ -348,7 +399,20 @@ export default function Admin() {
                   <td className="py-3.5 text-muted">{user.department || '—'}</td>
                   <td className="py-3.5 font-medium text-ink">{reportCounts.get(user.id) ?? 0}</td>
                   <td className="py-3.5 text-muted">{formatShortDate(user.createdAt)}</td>
-                  <td className="py-3.5 text-right"><span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-medium ${user.role === 'admin' ? 'bg-brand/10 text-brand' : 'bg-found text-forest'}`}>{user.role === 'admin' ? 'Admin' : 'Active'}</span></td>
+                  <td className="py-3.5 text-right">
+                    <div className="flex items-center justify-end gap-2">
+                      <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-medium ${user.role === 'admin' ? 'bg-brand/10 text-brand' : 'bg-found text-forest'}`}>{user.role === 'admin' ? 'Admin' : 'Active'}</span>
+                      <Button
+                        variant="outline"
+                        className="h-8 px-2.5"
+                        disabled={deletingUserId === user.id}
+                        onClick={() => removeUser(user)}
+                        aria-label={`Delete ${user.email}`}
+                      >
+                        <Trash2 size={14} />
+                      </Button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -358,7 +422,7 @@ export default function Admin() {
         {filteredUsers.length > 8 && <p className="text-xs text-muted">Showing 8 of {filteredUsers.length} matching users.</p>}
       </Card>
 
-      <Card className="flex flex-col gap-5 p-7">
+      <Card id="create-account" className="flex scroll-mt-32 flex-col gap-5 p-7">
         <div className="flex items-start gap-3">
           <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-chip text-brand"><UserPlus size={19} /></span>
           <div><h2 className="text-lg font-semibold text-ink">Create a student account</h2><p className="text-xs text-muted">Create an account with a university email and temporary password.</p></div>
@@ -374,10 +438,12 @@ export default function Admin() {
         </form>
       </Card>
 
-      <Card className="flex flex-col gap-5 p-6">
+      <Card id="reports" className="flex scroll-mt-32 flex-col gap-5 p-6">
         <div className="flex items-center justify-between gap-4"><div><h2 className="text-base font-semibold text-ink">Recent reports</h2><p className="mt-1 text-xs text-muted">Moderate and remove reports from the live directory.</p></div><Link to="/browse" className="flex items-center gap-1 text-xs font-semibold text-brand hover:underline">View directory <ArrowUpRight size={14} /></Link></div>
         {loading ? <p className="text-sm text-muted">Loading reports…</p> : items.length ? <div className="flex flex-col divide-y divide-line">{items.slice(0, 6).map((item) => <div key={item.id} className="flex flex-wrap items-center gap-4 py-4 first:pt-0 last:pb-0"><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-ink">{item.name}</p><p className="truncate text-xs text-muted">{item.id} · {item.place} · {item.date}</p>{item.reporter && <p className="mt-1 truncate text-[11px] text-brand">Reported by {item.reporter.firstName} {item.reporter.lastName} · {item.reporter.studentId || item.reporter.email}</p>}</div><StatusPill status={item.status} /><Button variant="outline" onClick={() => remove(item.id)} aria-label={`Delete ${item.name}`}><Trash2 size={16} /> Delete</Button></div>)}</div> : <p className="text-sm text-muted">No reports have been submitted yet.</p>}
       </Card>
+        </div>
+      </div>
     </>
   )
 }
